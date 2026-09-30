@@ -59,7 +59,8 @@ What to look for:
   charge a premium for bearing risk.
 
 Notes: the risk-free rate comes from the 13-week Treasury bill yield (`^IRX`). Pass the dividend yield
-with `--q`. Stock and ETF options are American, so their implied volatilities are approximate. Outside
+with `--q`. Options cheaper than $0.05 are skipped because at a cent or two the price is mostly tick size
+and the implied volatility is noise; change the cutoff with `--min-price`. Stock and ETF options are American, so their implied volatilities are approximate. Outside
 market hours bid/ask quotes are often missing, so the script falls back to last trade prices and says so.
 
 ## Convergence

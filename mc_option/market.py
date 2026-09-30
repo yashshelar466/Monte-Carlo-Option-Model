@@ -102,11 +102,14 @@ def risk_free_rate(default=0.04):
         return default
 
 
-def compare_to_market(data, q=0.0, moneyness=(0.8, 1.2), n_paths=50_000, seed=0):
+def compare_to_market(data, q=0.0, moneyness=(0.8, 1.2), min_price=0.05,
+                      n_paths=50_000, seed=0):
     """Price each out-of-the-money option with the model and back out its implied vol.
 
     Uses puts below the spot and calls above it, the liquid side of each
-    strike. Returns a DataFrame sorted by strike.
+    strike. Options priced below `min_price` are skipped: at a cent or two the
+    price is mostly tick size, so the implied vol it gives is noise.
+    Returns a DataFrame sorted by strike.
     """
     S0, T, r, sigma = data["spot"], data["T"], data["r"], data["hist_vol"]
     if T <= 0:
@@ -117,6 +120,7 @@ def compare_to_market(data, q=0.0, moneyness=(0.8, 1.2), n_paths=50_000, seed=0)
 
     rows = []
     for chain, option, in_range in sides:
+        chain = chain[chain["price"] >= min_price]
         for row in chain[in_range(chain["strike"])].itertuples():
             model = mc_european(S0, row.strike, T, r, sigma, option, q, n_paths, seed)
             rows.append({

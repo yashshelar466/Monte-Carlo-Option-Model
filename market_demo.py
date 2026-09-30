@@ -5,6 +5,7 @@ Needs internet access and yfinance (pip install -r requirements.txt).
     python market_demo.py                 # SPY, expiry about 30 days out
     python market_demo.py AAPL --days 60
     python market_demo.py ^SPX --q 0.013  # S&P 500 index options (European)
+    python market_demo.py --min-price 0   # keep even penny-priced options
 
 Saves market_smile.png.
 """
@@ -69,10 +70,12 @@ def main():
     parser.add_argument("--days", type=int, default=30, help="target days to expiry")
     parser.add_argument("--expiry", help="exact expiry date, YYYY-MM-DD")
     parser.add_argument("--q", type=float, default=0.0, help="dividend yield, e.g. 0.013")
+    parser.add_argument("--min-price", type=float, default=0.05,
+                        help="skip options cheaper than this (default 0.05)")
     args = parser.parse_args()
 
     data = fetch_market_data(args.ticker, args.expiry, args.days)
-    df = compare_to_market(data, q=args.q)
+    df = compare_to_market(data, q=args.q, min_price=args.min_price)
     if df.empty:
         raise SystemExit("No usable option prices found near the spot price.")
 
