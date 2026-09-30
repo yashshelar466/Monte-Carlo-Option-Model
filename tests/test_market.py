@@ -97,6 +97,15 @@ def fake_yfinance(monkeypatch):
     monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(Ticker=FakeTicker))
 
 
+def test_compare_to_market_skips_penny_options():
+    data = {"spot": S0, "T": T, "r": r, "hist_vol": 0.2,
+            "calls": synthetic_chain("call"), "puts": synthetic_chain("put")}
+    all_rows = compare_to_market(data, min_price=0, n_paths=2_000)
+    filtered = compare_to_market(data, min_price=0.2, n_paths=2_000)
+    assert filtered["market"].min() >= 0.2
+    assert set(all_rows["strike"]) - set(filtered["strike"]) == {80.0, 120.0}
+
+
 def test_fetch_market_data(fake_yfinance):
     data = fetch_market_data("FAKE", target_days=30)
     assert data["expiry"] == FakeTicker("FAKE").options[1]
