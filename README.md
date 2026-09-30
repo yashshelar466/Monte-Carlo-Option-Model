@@ -15,11 +15,21 @@ Price options by simulating many possible stock price paths and averaging the di
 6. **Validate.** European prices are checked against the Black-Scholes closed form.
 7. **Greeks.** Delta, gamma and vega by bump-and-reprice using common random numbers.
 
+## Convergence
+
+![Monte Carlo convergence](convergence.png)
+
+Left: each estimate and its 95% confidence band close in on the Black-Scholes price as paths grow.
+Right: on log-log axes the standard error falls along the 1/√N line, so 100× the paths buys only 10× the accuracy.
+Variance reduction shifts the whole line down (about 1.6× tighter here), which is equivalent to running
+about 2.5× as many plain paths for free. Regenerate with `python convergence_chart.py`.
+
 ## Usage
 
 ```bash
 pip install -r requirements.txt
 python example.py
+python convergence_chart.py
 pytest
 ```
 
@@ -35,7 +45,9 @@ print(bs_price(100, 105, 1, 0.05, 0.2))
 
 - `mc_option/monte_carlo.py`: path simulation, European/Asian pricing, variance reduction, Greeks
 - `mc_option/black_scholes.py`: analytical benchmark
+- `mc_option/convergence.py`: convergence study data
 - `example.py`: sample run
+- `convergence_chart.py`: draws `convergence.png`
 - `tests/`: checks against Black-Scholes
 
 ## Ideas to extend
