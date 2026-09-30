@@ -36,6 +36,32 @@ Longstaff-Schwartz solves this by walking backwards through the simulated dates:
 The 0.64 gap is the early-exercise premium. A call on a stock that pays no dividends is never worth
 exercising early, so its American and European prices match; `tests/test_american.py` checks both facts.
 
+## Real market data
+
+`market_demo.py` downloads a live option chain from Yahoo Finance and compares it with the model:
+
+```bash
+python market_demo.py                 # SPY, expiry about 30 days out
+python market_demo.py AAPL --days 60
+python market_demo.py ^SPX --q 0.013  # S&P 500 index options (European, closest to the model)
+```
+
+For each out-of-the-money put and call it prints the market price, the Monte Carlo price using the
+stock's **historical volatility** (from a year of daily returns), and the **implied volatility**: the σ
+that makes Black-Scholes match the market price. It also saves `market_smile.png`, which plots both.
+
+What to look for:
+
+- **The volatility smile.** If Black-Scholes were exactly right, every strike would imply the same σ.
+  Real markets charge more for out-of-the-money puts (crash protection), so implied volatility rises
+  to the left of the spot price.
+- **Implied vs historical volatility.** Implied volatility is usually above historical: option sellers
+  charge a premium for bearing risk.
+
+Notes: the risk-free rate comes from the 13-week Treasury bill yield (`^IRX`). Pass the dividend yield
+with `--q`. Stock and ETF options are American, so their implied volatilities are approximate. Outside
+market hours bid/ask quotes are often missing, so the script falls back to last trade prices and says so.
+
 ## Convergence
 
 ![Monte Carlo convergence](convergence.png)
@@ -65,11 +91,13 @@ print(bs_price(100, 105, 1, 0.05, 0.2))
 ## Layout
 
 - `mc_option/monte_carlo.py`: path simulation, European/Asian pricing, variance reduction, Greeks
+- `mc_option/market.py`: implied and historical volatility, Yahoo Finance download, model vs market
 - `mc_option/american.py`: Longstaff-Schwartz American pricing and a binomial-tree benchmark
 - `mc_option/black_scholes.py`: analytical benchmark
 - `mc_option/convergence.py`: convergence study data
 - `example.py`: sample run
 - `convergence_chart.py`: draws `convergence.png`
+- `market_demo.py`: live model-vs-market comparison and volatility smile chart
 - `tests/`: checks against Black-Scholes
 
 ## Ideas to extend
