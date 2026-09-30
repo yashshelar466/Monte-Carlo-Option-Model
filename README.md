@@ -15,6 +15,27 @@ Price options by simulating many possible stock price paths and averaging the di
 6. **Validate.** European prices are checked against the Black-Scholes closed form.
 7. **Greeks.** Delta, gamma and vega by bump-and-reprice using common random numbers.
 
+## American options (Longstaff-Schwartz)
+
+An American option can be exercised any day, so its value depends on the best exercise policy.
+Simulation runs forward in time, but the exercise decision needs the value of *waiting*, which lives in the future.
+Longstaff-Schwartz solves this by walking backwards through the simulated dates:
+
+1. At expiry, each path's cash flow is its payoff.
+2. At each earlier date, take the paths that are in the money and regress their discounted future
+   cash flow on `1, S/K, (S/K)², (S/K)³`. The fitted curve is the estimated value of waiting.
+3. Where exercising now pays more than that estimate, exercise: that path's cash flow becomes today's payoff.
+4. The price is the average cash flow, discounted to today.
+
+| American put, S=36, K=40, T=1, r=6%, σ=20% | Price |
+|---|---|
+| Longstaff-Schwartz MC (100k paths, 50 dates) | 4.482 ± 0.006 |
+| Binomial tree (2,000 steps) | 4.487 |
+| European put (Black-Scholes) | 3.844 |
+
+The 0.64 gap is the early-exercise premium. A call on a stock that pays no dividends is never worth
+exercising early, so its American and European prices match; `tests/test_american.py` checks both facts.
+
 ## Convergence
 
 ![Monte Carlo convergence](convergence.png)
@@ -44,6 +65,7 @@ print(bs_price(100, 105, 1, 0.05, 0.2))
 ## Layout
 
 - `mc_option/monte_carlo.py`: path simulation, European/Asian pricing, variance reduction, Greeks
+- `mc_option/american.py`: Longstaff-Schwartz American pricing and a binomial-tree benchmark
 - `mc_option/black_scholes.py`: analytical benchmark
 - `mc_option/convergence.py`: convergence study data
 - `example.py`: sample run
@@ -53,6 +75,5 @@ print(bs_price(100, 105, 1, 0.05, 0.2))
 ## Ideas to extend
 
 - Barrier or lookback options (payoffs that depend on the path, like the Asian one)
-- American options with Longstaff-Schwartz regression
 - Heston stochastic volatility or jump-diffusion dynamics
 - Quasi-random (Sobol) numbers for faster convergence
