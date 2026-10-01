@@ -7,6 +7,7 @@ Needs internet access and yfinance (pip install -r requirements.txt).
     python market_demo.py ^SPX            # S&P 500 index options (European)
     python market_demo.py --min-price 0   # keep even penny-priced options
     python market_demo.py --heston        # also fit the Heston model to the smile
+    python market_demo.py --heston --bates  # ...and the Bates model (Heston + jumps)
     python market_demo.py --no-forward --q 0.013  # use the quoted spot and a given dividend yield
 
 Saves market_smile.png.
@@ -16,14 +17,18 @@ import argparse
 
 import matplotlib.pyplot as plt
 
-from mc_option.market import (add_heston, compare_to_market, fetch_market_data,
+from mc_option.market import (add_bates, add_heston, compare_to_market, fetch_market_data,
                               with_implied_forward)
 
 SURFACE, TEXT, TEXT_2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
-MARKET, MODEL, HESTON, REFERENCE = "#eb6834", "#2a78d6", "#1baf7a", "#52514e"
+MARKET, MODEL, REFERENCE = "#eb6834", "#2a78d6", "#52514e"
+# name -> (label, colour, line style); the dash patterns keep them apart without colour.
+FIT_STYLES = {"heston": ("Heston", "#1baf7a", "--"), "bates": ("Bates", "#4a3aa7", "-.")}
 
 
-def plot(df, data, path="market_smile.png", heston=None):
+def plot(df, data, path="market_smile.png", fits=None):
+    """`fits` maps a model name in FIT_STYLES to its (params, iv_rmse)."""
+    fits = fits or {}
     S0, sigma = data["spot"], data["hist_vol"]
     plt.rcParams.update({
         "font.size": 10, "text.color": TEXT, "axes.labelcolor": TEXT_2,
@@ -40,9 +45,10 @@ def plot(df, data, path="market_smile.png", heston=None):
 
     ax1.plot(df["strike"], df["model"], color=MODEL, linewidth=2,
              label=f"Model (historical vol {sigma:.1%})")
-    if heston is not None:
-        ax1.plot(df["strike"], df["heston"], color=HESTON, linewidth=2, linestyle="--",
-                 label="Heston (fitted)")
+    for name in fits:
+        label, color, style = FIT_STYLES[name]
+        ax1.plot(df["strike"], df[name], color=color, linewidth=2, linestyle=style,
+                 label=f"{label} (fitted)")
     ax1.scatter(df["strike"], df["market"], color=MARKET, s=28, zorder=3,
                 edgecolors=SURFACE, linewidths=1, label="Market price")
     ax1.set_ylabel("Option price")
@@ -53,11 +59,11 @@ def plot(df, data, path="market_smile.png", heston=None):
     iv = df.dropna(subset=["implied_vol"])
     ax2.scatter(iv["strike"], iv["implied_vol"] * 100, color=MARKET, s=28, zorder=3,
                 edgecolors=SURFACE, linewidths=1, label="Market implied volatility")
-    if heston is not None:
-        hiv = df.dropna(subset=["heston_iv"])
-        params, rmse = heston
-        ax2.plot(hiv["strike"], hiv["heston_iv"] * 100, color=HESTON, linewidth=2,
-                 linestyle="--", label=f"Heston (fit error {rmse:.2%} vol)")
+    for name, (params, rmse) in fits.items():
+        label, color, style = FIT_STYLES[name]
+        fit_iv = df.dropna(subset=[f"{name}_iv"])
+        ax2.plot(fit_iv["strike"], fit_iv[f"{name}_iv"] * 100, color=color, linewidth=2,
+                 linestyle=style, label=f"{label} (fit error {rmse:.2%} vol)")
     ax2.axhline(sigma * 100, color=REFERENCE, linestyle="--", linewidth=1.2,
                 label=f"Historical volatility {sigma:.1%}")
     ax2.set_ylabel("Volatility (%)")
@@ -87,6 +93,8 @@ def main():
                         help="skip options cheaper than this (default 0.05)")
     parser.add_argument("--heston", action="store_true",
                         help="calibrate the Heston model to the smile and plot it")
+    parser.add_argument("--bates", action="store_true",
+                        help="calibrate the Bates model (Heston + jumps) to the smile and plot it")
     args = parser.parse_args()
 
     data = fetch_market_data(args.ticker, args.expiry, args.days)
@@ -107,24 +115,33 @@ def main():
         print(f"Implied forward {data['forward']:,.2f} from put-call parity; quoted spot "
               f"{data['quoted_spot']:,.2f}, so the options price the stock as if at {data['spot']:,.2f}")
     print()
-    heston = None
+    fits = {}
     if args.heston:
         df, params, rmse = add_heston(df, data, q=q)
-        heston = (params, rmse)
+        fits["heston"] = (params, rmse)
+    if args.bates:
+        df, params, rmse = add_bates(df, data, q=q)
+        fits["bates"] = (params, rmse)
     table = df.assign(implied_vol=df["implied_vol"] * 100)
-    if heston:
-        table["heston_iv"] = df["heston_iv"] * 100
+    for name in fits:
+        table[f"{name}_iv"] = df[f"{name}_iv"] * 100
     print(table.to_string(index=False, float_format=lambda x: f"{x:,.2f}"))
     if (df["source"] == "last").any():
         print("\nSome prices are last trades (no live bid/ask), so they may be stale.")
 
-    if heston:
-        p, rmse = heston
+    if "heston" in fits:
+        p, rmse = fits["heston"]
         print(f"\nHeston fit: v0 {p.v0:.4f} (vol {p.v0 ** 0.5:.1%}), kappa {p.kappa:.2f}, "
               f"theta {p.theta:.4f} (vol {p.theta ** 0.5:.1%}), xi {p.xi:.2f}, rho {p.rho:.2f}; "
               f"implied-vol RMSE {rmse:.2%}")
+    if "bates" in fits:
+        p, rmse = fits["bates"]
+        print(f"\nBates fit: v0 {p.v0:.4f} (vol {p.v0 ** 0.5:.1%}), kappa {p.kappa:.2f}, "
+              f"theta {p.theta:.4f} (vol {p.theta ** 0.5:.1%}), xi {p.xi:.2f}, rho {p.rho:.2f}; "
+              f"jumps {p.lam:.2f}/year of {p.mu_j:+.1%} on average (sd {p.sigma_j:.1%}); "
+              f"implied-vol RMSE {rmse:.2%}")
 
-    plot(df, data, heston=heston)
+    plot(df, data, fits=fits)
     print("\nSaved market_smile.png")
 
 

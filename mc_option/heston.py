@@ -64,15 +64,15 @@ def _char_func(u, T, p):
     return np.exp(C + D * v0)
 
 
-def heston_price(S0, K, T, r, params, option="call", q=0.0):
-    """Semi-analytic Heston price via the Lewis (2001) Fourier formula.
+def _fourier_price(S0, K, T, r, option, q, char_func):
+    """Lewis (2001) Fourier price for any model with a known characteristic function.
 
-    K may be a scalar or an array of strikes (one expiry). Returns a float or
-    an array to match.
+    `char_func(u)` must be the characteristic function of ln(S_T / S0) - (r - q) T.
+    K may be a scalar or an array of strikes (one expiry).
     """
     K = np.asarray(K, dtype=float)
     x = np.log(S0 / K) + (r - q) * T                       # log-moneyness vs forward
-    phi = _char_func(_U - 0.5j, T, params)                 # shape (n_nodes,)
+    phi = char_func(_U - 0.5j)                             # shape (n_nodes,)
     integrand = np.real(np.exp(1j * np.multiply.outer(x, _U)) * phi) / (_U**2 + 0.25)
     integral = integrand @ _W
     call = S0 * np.exp(-q * T) - np.sqrt(S0 * K) * np.exp(-0.5 * (r + q) * T) / np.pi * integral
@@ -85,17 +85,29 @@ def heston_price(S0, K, T, r, params, option="call", q=0.0):
     return float(price) if price.ndim == 0 else price
 
 
-def simulate_heston(S0, T, r, params, n_paths, n_steps, q=0.0, seed=None):
+def heston_price(S0, K, T, r, params, option="call", q=0.0):
+    """Semi-analytic Heston price via the Lewis (2001) Fourier formula.
+
+    K may be a scalar or an array of strikes (one expiry). Returns a float or
+    an array to match.
+    """
+    return _fourier_price(S0, K, T, r, option, q, lambda u: _char_func(u, T, params))
+
+
+def simulate_heston(S0, T, r, params, n_paths, n_steps, q=0.0, seed=None, jumps=None):
     """Simulate Heston price paths (log-Euler for S, full-truncation Euler for v).
 
     Full truncation uses max(v, 0) wherever the variance enters the dynamics,
     which keeps the simulation stable when a step overshoots below zero.
-    Antithetic pairs are used for variance reduction. Returns S, shape
-    (n_paths, n_steps + 1).
+    Antithetic pairs are used for the diffusion. `jumps=(lam, mu_j, sigma_j)`
+    adds Bates-style lognormal jumps. Returns S, shape (n_paths, n_steps + 1).
     """
     v0, kappa, theta, xi, rho = params.as_tuple()
     rng = np.random.default_rng(seed)
     dt = T / n_steps
+    if jumps is not None:
+        lam, mu_j, sigma_j = jumps
+        jump_drift = lam * (np.exp(mu_j + 0.5 * sigma_j**2) - 1)  # keeps E[S_T] = S0 e^((r-q)T)
     half = (n_paths + 1) // 2
     S = np.empty((n_paths, n_steps + 1))
     S[:, 0] = S0
@@ -108,6 +120,10 @@ def simulate_heston(S0, T, r, params, n_paths, n_steps, q=0.0, seed=None):
         z2 = rho * z[0] + np.sqrt(1 - rho**2) * z[1]
         v_pos = np.maximum(v, 0.0)
         log_s += (r - q - 0.5 * v_pos) * dt + np.sqrt(v_pos * dt) * z1
+        if jumps is not None:
+            n_jumps = rng.poisson(lam * dt, n_paths)
+            log_s += (n_jumps * mu_j + np.sqrt(n_jumps) * sigma_j * rng.standard_normal(n_paths)
+                      - jump_drift * dt)
         v += kappa * (theta - v_pos) * dt + xi * np.sqrt(v_pos * dt) * z2
         S[:, t + 1] = np.exp(log_s)
     return S
@@ -126,18 +142,14 @@ def _bs_vega(S0, K, T, r, sigma, q):
     return S0 * np.exp(-q * T) * norm.pdf(d1) * np.sqrt(T)
 
 
-def calibrate_heston(S0, strikes, T, r, market_prices, market_ivs, options, q=0.0,
-                     initial=None):
-    """Fit Heston parameters to one expiry's option prices.
+def _calibrate(price_calls, x0, bounds, S0, strikes, T, r, market_prices,
+               market_ivs, options, q):
+    """Least-squares fit of a model's parameters to one expiry's prices.
 
-    Minimises the squared differences in implied volatility, approximated as
-    (model price - market price) / Black-Scholes vega, which is accurate for
-    small errors and avoids inverting Black-Scholes at every step.
-    `options` holds "call" or "put" per strike. Returns (HestonParams, rmse),
-    where rmse is the root-mean-square implied-vol error.
-
-    With a single expiry, kappa and theta trade off against each other, so
-    several parameter sets can fit equally well; the smile is what is pinned down.
+    Minimises implied-volatility errors, approximated as (model price - market
+    price) / Black-Scholes vega, which is accurate for small errors and avoids
+    inverting Black-Scholes at every step. `price_calls(x, strikes)` returns
+    model call prices for parameter vector x. Returns (x, iv_rmse).
     """
     strikes = np.asarray(strikes, dtype=float)
     market_prices = np.asarray(market_prices, dtype=float)
@@ -145,14 +157,27 @@ def calibrate_heston(S0, strikes, T, r, market_prices, market_ivs, options, q=0.
     vega = np.maximum(_bs_vega(S0, strikes, T, r, np.asarray(market_ivs), q), 1e-8)
 
     def residuals(x):
-        p = HestonParams(*x)
-        calls = heston_price(S0, strikes, T, r, p, "call", q)
+        calls = price_calls(x, strikes)
         model = np.where(is_call, calls, calls - S0 * np.exp(-q * T) + strikes * np.exp(-r * T))
         return (model - market_prices) / vega
 
-    atm_var = float(np.interp(S0, strikes, market_ivs)) ** 2
+    fit = least_squares(residuals, x0, bounds=bounds, x_scale="jac")
+    return [float(v) for v in fit.x], float(np.sqrt(np.mean(fit.fun**2)))
+
+
+def calibrate_heston(S0, strikes, T, r, market_prices, market_ivs, options, q=0.0,
+                     initial=None):
+    """Fit Heston parameters to one expiry's option prices.
+
+    `options` holds "call" or "put" per strike. Returns (HestonParams, rmse),
+    where rmse is the root-mean-square implied-vol error.
+
+    With a single expiry, kappa and theta trade off against each other, so
+    several parameter sets can fit equally well; the smile is what is pinned down.
+    """
+    atm_var = float(np.interp(S0, np.asarray(strikes, dtype=float), market_ivs)) ** 2
     x0 = initial.as_tuple() if initial else (atm_var, 2.0, atm_var, 0.5, -0.7)
     bounds = ([1e-4, 0.1, 1e-4, 0.01, -0.99], [1.0, 10.0, 1.0, 3.0, 0.99])
-    fit = least_squares(residuals, x0, bounds=bounds, x_scale="jac")
-    rmse = float(np.sqrt(np.mean(fit.fun**2)))
-    return HestonParams(*map(float, fit.x)), rmse
+    x, rmse = _calibrate(lambda x, k: heston_price(S0, k, T, r, HestonParams(*x), "call", q),
+                         x0, bounds, S0, strikes, T, r, market_prices, market_ivs, options, q)
+    return HestonParams(*x), rmse

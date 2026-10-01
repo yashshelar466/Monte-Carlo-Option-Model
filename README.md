@@ -19,8 +19,9 @@ spot. The market pays heavily for crash protection that the lognormal model says
 - **American options** with Longstaff-Schwartz regression, checked against a binomial tree
 - **Live market data** from Yahoo Finance: implied volatility, the volatility smile, model vs market
 - **Heston stochastic volatility**: Fourier pricing, Monte Carlo simulation, and calibration to the live smile
+- **Bates jump model** (Heston + crashes): fits the live SPY skew 15× more closely than Heston
 - **Convergence study** showing the 1/√N error rate
-- 54 tests, all runnable offline, run automatically on every push (Linux and Windows, Python 3.10–3.14)
+- 67 tests, all runnable offline, run automatically on every push (Linux and Windows, Python 3.10–3.14)
 
 ## Quick start
 
@@ -35,7 +36,7 @@ pip install -r requirements.txt
 
 python example.py                  # prices, Greeks and American put
 python market_demo.py              # live SPY comparison (needs internet)
-python market_demo.py --heston     # ...plus a Heston fit to the smile
+python market_demo.py --heston --bates  # ...plus Heston and Bates fits to the smile
 pytest                             # run the tests (offline)
 pytest -m live                     # check the real Yahoo Finance feed (needs internet)
 ```
@@ -188,6 +189,32 @@ at short maturities; adding price jumps (the Bates model) or fitting several exp
 fixes. With a single expiry, `κ` and `θ` also trade off against each other, so read them with care; the fitted
 smile itself is reliable.
 
+## Bates: adding jumps
+
+Bates (1996) adds sudden jumps to Heston: crashes arrive at random (on average `λ` per year), and each one
+moves the price by a random log-return with mean `μ_J` and standard deviation `σ_J`. The drift is adjusted
+so the expected return is unchanged, keeping prices arbitrage-free. Jumps are independent of the diffusion,
+so Bates' characteristic function is Heston's multiplied by a jump term, and the same Fourier pricer and
+calibration work unchanged (`mc_option/bates.py`).
+
+```bash
+python market_demo.py --heston --bates
+```
+
+On the recorded SPY chain from 1 Oct 2026 (`tests/data/spy_2026-10-01.csv`):
+
+| | Heston | Bates |
+|---|---|---|
+| Implied-vol fit error | 0.74 points | **0.05 points** |
+| 615 put (market 35.6%) | 32.5% | **35.5%** |
+| Vol of vol `ξ` | 2.22 | 0.95 |
+| Jumps | none | **0.13 per year, mean log-jump −18%** |
+
+The fitted jumps say the market is pricing a crash of roughly −18% about once every 7–8 years, which is
+exactly the protection those far-out puts sell, and with it Heston's extreme vol of vol is no longer needed.
+`tests/test_bates.py` checks this result on the recorded data, alongside agreement with adaptive
+integration, Monte Carlo, and the reduction to Heston when `λ = 0`.
+
 ## Layout
 
 | Path | Contents |
@@ -195,11 +222,13 @@ smile itself is reliable.
 | `mc_option/monte_carlo.py` | Path simulation, European and Asian pricing, variance reduction, Greeks |
 | `mc_option/american.py` | Longstaff-Schwartz American pricing and a binomial-tree benchmark |
 | `mc_option/heston.py` | Heston model: Fourier pricing, Monte Carlo simulation, calibration |
+| `mc_option/bates.py` | Bates model (Heston + jumps), reusing Heston's pricer and calibration |
 | `mc_option/market.py` | Implied and historical volatility, Yahoo Finance download, model vs market |
 | `mc_option/black_scholes.py` | Black-Scholes closed form, the analytical benchmark |
 | `mc_option/convergence.py` | Data for the convergence study |
 | `example.py` | Sample run of every pricer |
 | `convergence_chart.py` | Draws `convergence.png` |
-| `market_demo.py` | Live model-vs-market comparison, volatility smile chart, optional Heston fit |
+| `market_demo.py` | Live model-vs-market comparison, volatility smile chart, optional Heston and Bates fits |
 | `tests/` | Checks against Black-Scholes, the binomial tree, adaptive integration and synthetic smiles, plus the error rate; a fake Yahoo module keeps them offline. `test_live.py` checks the real feed and runs only with `pytest -m live` |
 | `docs/` | Saved charts from live runs |
+| `tests/data/` | Recorded live option prices used as a regression test |

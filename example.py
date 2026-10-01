@@ -1,7 +1,7 @@
 """Run the model on a sample option and compare against Black-Scholes."""
 
-from mc_option import (HestonParams, binomial_american, bs_price, heston_price, lsm_american,
-                       mc_asian, mc_european, mc_greeks, mc_heston)
+from mc_option import (BatesParams, HestonParams, bates_price, binomial_american, bs_price,
+                       heston_price, lsm_american, mc_asian, mc_european, mc_greeks, mc_heston)
 
 S0, K, T, r, sigma = 100.0, 105.0, 1.0, 0.05, 0.2
 
@@ -35,3 +35,9 @@ mc = mc_heston(100, 100, 0.5, 0.03, params, "call", seed=42)
 print("\nHeston call (S=100, K=100, T=0.5)")
 print(f"  Fourier formula         : {heston_price(100, 100, 0.5, 0.03, params):.4f}")
 print(f"  Monte Carlo             : {mc.price:.4f}  ± {mc.std_error:.4f}")
+
+# Bates: Heston plus occasional crashes (0.8 a year, averaging -12%).
+bates = BatesParams(*params.as_tuple(), lam=0.8, mu_j=-0.12, sigma_j=0.15)
+print("\nOut-of-the-money put (K=80, T=0.5): crash protection")
+print(f"  Heston                  : {heston_price(100, 80, 0.5, 0.03, params, 'put'):.4f}")
+print(f"  Bates (with jumps)      : {bates_price(100, 80, 0.5, 0.03, bates, 'put'):.4f}")
