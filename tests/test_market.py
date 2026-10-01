@@ -125,3 +125,16 @@ def test_market_demo_end_to_end(fake_yfinance, monkeypatch, tmp_path, capsys):
     market_demo.main()
     assert (tmp_path / "market_smile.png").stat().st_size > 10_000
     assert "Saved market_smile.png" in capsys.readouterr().out
+
+
+def test_market_demo_with_heston(fake_yfinance, monkeypatch, tmp_path, capsys):
+    import matplotlib
+    matplotlib.use("Agg")
+    import market_demo
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["market_demo.py", "FAKE", "--heston"])
+    market_demo.main()
+    out = capsys.readouterr().out
+    assert "Heston fit:" in out and "heston_iv" in out
+    assert (tmp_path / "market_smile.png").exists()

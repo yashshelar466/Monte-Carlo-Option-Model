@@ -16,8 +16,9 @@ spot. The market pays heavily for crash protection that the lognormal model says
 - **Greeks** (delta, gamma, vega) by bump-and-reprice with common random numbers
 - **American options** with Longstaff-Schwartz regression, checked against a binomial tree
 - **Live market data** from Yahoo Finance: implied volatility, the volatility smile, model vs market
+- **Heston stochastic volatility**: Fourier pricing, Monte Carlo simulation, and calibration to the live smile
 - **Convergence study** showing the 1/√N error rate
-- 32 tests, all runnable offline
+- 52 tests, all runnable offline
 
 ## Quick start
 
@@ -32,6 +33,7 @@ pip install -r requirements.txt
 
 python example.py                  # prices, Greeks and American put
 python market_demo.py              # live SPY comparison (needs internet)
+python market_demo.py --heston     # ...plus a Heston fit to the smile
 pytest                             # run the tests
 ```
 
@@ -129,20 +131,56 @@ Notes:
 - Outside market hours bid/ask quotes are often missing, so the script falls back to last trade prices
   and says so. Run it between 9:30am and 4pm New York time for the cleanest results.
 
+## Heston stochastic volatility
+
+The chart at the top shows the problem: Black-Scholes uses one volatility for every strike, but the market
+doesn't. Heston (1993) fixes this by letting the variance `v` move randomly too:
+
+```
+dS = (r - q) S dt + √v S dW₁
+dv = κ (θ - v) dt + ξ √v dW₂        corr(dW₁, dW₂) = ρ
+```
+
+| Parameter | Meaning | Effect on the smile |
+|---|---|---|
+| `v0` | today's variance | overall level at the money |
+| `κ` (kappa) | speed of pull back to the long-run level | how the smile changes with maturity |
+| `θ` (theta) | long-run variance | level for long-dated options |
+| `ξ` (xi) | volatility of volatility | curvature: fatter tails on both sides |
+| `ρ` (rho) | correlation of stock and volatility moves | tilt: ρ < 0 means volatility jumps when the market falls, which produces the equity skew |
+
+`mc_option/heston.py` prices options two independent ways, which check each other:
+
+- **Fourier formula** (Lewis 2001, with the "little trap" characteristic function of Albrecher et al. 2007):
+  fast and accurate to 6 decimals against adaptive integration. It reduces exactly to Black-Scholes when
+  volatility can't move.
+- **Monte Carlo**: simulates both equations with full-truncation Euler steps; agrees with the formula
+  within about one standard error.
+
+**Calibration** finds the five parameters that best match a market smile, by least squares on
+implied-volatility errors. On a synthetic SPY-like chain it recovers the true parameters exactly in about a second.
+
+```bash
+python market_demo.py --heston
+```
+
+fits Heston to today's live smile and draws its curve over the market's. Where Black-Scholes misses the skew,
+the fitted Heston curve runs through it, and the fitted `ρ` tells you how strongly the market expects volatility
+to rise in a sell-off. With a single expiry, `κ` and `θ` trade off against each other, so read them with care;
+the fitted smile itself is reliable.
+
 ## Layout
 
-- `mc_option/monte_carlo.py`: path simulation, European/Asian pricing, variance reduction, Greeks
-- `mc_option/market.py`: implied and historical volatility, Yahoo Finance download, model vs market
-- `mc_option/american.py`: Longstaff-Schwartz American pricing and a binomial-tree benchmark
-- `mc_option/black_scholes.py`: analytical benchmark
-- `mc_option/convergence.py`: convergence study data
-- `example.py`: sample run
-- `convergence_chart.py`: draws `convergence.png`
-- `market_demo.py`: live model-vs-market comparison and volatility smile chart
-- `tests/`: checks against Black-Scholes
-
-## Ideas to extend
-
-- Barrier or lookback options (payoffs that depend on the path, like the Asian one)
-- Heston stochastic volatility or jump-diffusion dynamics
-- Quasi-random (Sobol) numbers for faster convergence
+| Path | Contents |
+|---|---|
+| `mc_option/monte_carlo.py` | Path simulation, European and Asian pricing, variance reduction, Greeks |
+| `mc_option/american.py` | Longstaff-Schwartz American pricing and a binomial-tree benchmark |
+| `mc_option/heston.py` | Heston model: Fourier pricing, Monte Carlo simulation, calibration |
+| `mc_option/market.py` | Implied and historical volatility, Yahoo Finance download, model vs market |
+| `mc_option/black_scholes.py` | Black-Scholes closed form, the analytical benchmark |
+| `mc_option/convergence.py` | Data for the convergence study |
+| `example.py` | Sample run of every pricer |
+| `convergence_chart.py` | Draws `convergence.png` |
+| `market_demo.py` | Live model-vs-market comparison, volatility smile chart, optional Heston fit |
+| `tests/` | Checks against Black-Scholes, the binomial tree, adaptive integration and synthetic smiles, plus the error rate; a fake Yahoo module keeps them offline |
+| `docs/` | Saved charts from live runs |
