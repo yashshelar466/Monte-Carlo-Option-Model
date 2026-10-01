@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from mc_option import bs_price
-from mc_option.market import (compare_to_market, fetch_market_data, historical_vol,
+from mc_option.market import (compare_to_market, with_implied_forward, fetch_market_data, historical_vol,
                               implied_vol, market_price, year_fraction)
 
 S0, T, r = 100.0, 0.25, 0.04
@@ -106,6 +106,41 @@ def test_compare_to_market_skips_penny_options():
     assert set(all_rows["strike"]) - set(filtered["strike"]) == {80.0, 120.0}
 
 
+def flat_vol_market(true_spot, q, sigma=0.2):
+    """Calls and puts on every strike, priced at a flat vol with dividend yield q."""
+    strikes = np.arange(80.0, 121.0, 1.0)
+    def chain(option):
+        prices = np.array([bs_price(true_spot, k, T, r, sigma, option, q) for k in strikes])
+        return pd.DataFrame({"strike": strikes, "bid": prices - 0.01, "ask": prices + 0.01,
+                             "lastPrice": prices})
+    return chain("call"), chain("put")
+
+
+def test_implied_forward_corrects_a_stale_spot_and_dividends():
+    calls, puts = flat_vol_market(true_spot=100.0, q=0.012)
+    stale = {"spot": 99.0, "T": T, "r": r, "hist_vol": 0.2, "calls": calls, "puts": puts}
+
+    # With the stale spot, puts and calls disagree: a jump in implied vol at the money.
+    before = compare_to_market(stale, n_paths=2_000)
+    put_iv = before[before["type"] == "put"]["implied_vol"].iloc[-1]
+    call_iv = before[before["type"] == "call"]["implied_vol"].iloc[0]
+    assert call_iv - put_iv > 0.02
+
+    fixed = with_implied_forward(stale)
+    assert fixed["forward"] == pytest.approx(100.0 * np.exp((r - 0.012) * T), rel=1e-6)
+    assert fixed["quoted_spot"] == 99.0
+    after = compare_to_market(fixed, n_paths=2_000)
+    assert np.allclose(after["implied_vol"], 0.2, atol=1e-4)
+
+
+def test_implied_forward_without_matching_strikes_leaves_data_alone():
+    calls, puts = flat_vol_market(true_spot=100.0, q=0.0)
+    data = {"spot": 100.0, "T": T, "r": r, "calls": calls[calls["strike"] > 100],
+            "puts": puts[puts["strike"] < 100]}
+    out = with_implied_forward(data)
+    assert out["forward"] is None and out["spot"] == 100.0
+
+
 def test_fetch_market_data(fake_yfinance):
     data = fetch_market_data("FAKE", target_days=30)
     assert data["expiry"] == FakeTicker("FAKE").options[1]
@@ -124,7 +159,8 @@ def test_market_demo_end_to_end(fake_yfinance, monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(sys, "argv", ["market_demo.py", "FAKE"])
     market_demo.main()
     assert (tmp_path / "market_smile.png").stat().st_size > 10_000
-    assert "Saved market_smile.png" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Saved market_smile.png" in out and "Implied forward" in out
 
 
 def test_market_demo_with_heston(fake_yfinance, monkeypatch, tmp_path, capsys):
