@@ -36,7 +36,8 @@ pip install -r requirements.txt
 python example.py                  # prices, Greeks and American put
 python market_demo.py              # live SPY comparison (needs internet)
 python market_demo.py --heston     # ...plus a Heston fit to the smile
-pytest                             # run the tests
+pytest                             # run the tests (offline)
+pytest -m live                     # check the real Yahoo Finance feed (needs internet)
 ```
 
 ```python
@@ -200,5 +201,5 @@ smile itself is reliable.
 | `example.py` | Sample run of every pricer |
 | `convergence_chart.py` | Draws `convergence.png` |
 | `market_demo.py` | Live model-vs-market comparison, volatility smile chart, optional Heston fit |
-| `tests/` | Checks against Black-Scholes, the binomial tree, adaptive integration and synthetic smiles, plus the error rate; a fake Yahoo module keeps them offline |
+| `tests/` | Checks against Black-Scholes, the binomial tree, adaptive integration and synthetic smiles, plus the error rate; a fake Yahoo module keeps them offline. `test_live.py` checks the real feed and runs only with `pytest -m live` |
 | `docs/` | Saved charts from live runs |
