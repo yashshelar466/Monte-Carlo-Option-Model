@@ -18,7 +18,7 @@ spot. The market pays heavily for crash protection that the lognormal model says
 - **Live market data** from Yahoo Finance: implied volatility, the volatility smile, model vs market
 - **Heston stochastic volatility**: Fourier pricing, Monte Carlo simulation, and calibration to the live smile
 - **Convergence study** showing the 1/√N error rate
-- 52 tests, all runnable offline
+- 54 tests, all runnable offline
 
 ## Quick start
 
@@ -107,7 +107,7 @@ exercising early, so its American and European prices match; `tests/test_america
 ```bash
 python market_demo.py                 # SPY, expiry about 30 days out
 python market_demo.py AAPL --days 60
-python market_demo.py ^SPX --q 0.013  # S&P 500 index options (European, closest to the model)
+python market_demo.py ^SPX            # S&P 500 index options (European, closest to the model)
 ```
 
 For each out-of-the-money put and call it prints the market price, the Monte Carlo price using the
@@ -124,7 +124,12 @@ What to look for:
 
 Notes:
 
-- The risk-free rate is the 13-week Treasury bill yield (`^IRX`). Pass the dividend yield with `--q`.
+- The risk-free rate is the 13-week Treasury bill yield (`^IRX`).
+- **Implied forward.** The stock price is taken from the options themselves: put-call parity,
+  `C - P = (F - K) e^(-rT)`, on the strikes nearest the money gives the forward price `F`. This removes a
+  spot quote that lags the option quotes (on a live SPY run it caused a 1.5 vol-point jump between puts
+  and calls at the money) and makes a dividend yield unnecessary, since `F` already includes it.
+  Use `--no-forward --q 0.013` to price off the quoted spot with a given dividend yield instead.
 - Options cheaper than $0.05 are skipped: at a cent or two the price is mostly tick size and the implied
   volatility is noise. Change the cutoff with `--min-price`.
 - Stock and ETF options are American, so their Black-Scholes implied volatilities are approximate.

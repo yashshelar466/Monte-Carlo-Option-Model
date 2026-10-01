@@ -103,6 +103,34 @@ def risk_free_rate(default=0.04):
         return default
 
 
+def with_implied_forward(data, n_strikes=10):
+    """Replace the quoted spot with the one the option prices themselves imply.
+
+    Put-call parity, C - P = (F - K) e^(-rT), gives the forward price F from
+    any strike that has both a call and a put. Using the median over the
+    strikes nearest the money removes two problems at once: a spot price that
+    lags the option quotes, and an unknown dividend yield (F already includes
+    it). European prices depend on the spot only through F, so pricing with
+    spot F e^(-rT) and q = 0 is then exact.
+
+    Returns a copy of `data` with the adjusted `spot`, plus `quoted_spot`,
+    `forward` and `implied_q` (the dividend yield the forward implies). If no
+    strike has both a call and a put, `data` is returned unchanged with
+    `forward` set to None.
+    """
+    S0, T, r = data["spot"], data["T"], data["r"]
+    calls = market_price(data["calls"])[["strike", "price"]]
+    puts = market_price(data["puts"])[["strike", "price"]]
+    both = calls.merge(puts, on="strike", suffixes=("_call", "_put"))
+    if both.empty or T <= 0:
+        return {**data, "forward": None}
+    nearest = both.iloc[(both["strike"] - S0).abs().argsort()[:n_strikes]]
+    forwards = nearest["strike"] + (nearest["price_call"] - nearest["price_put"]) * np.exp(r * T)
+    F = float(forwards.median())
+    return {**data, "spot": F * np.exp(-r * T), "quoted_spot": S0, "forward": F,
+            "implied_q": r - np.log(F / S0) / T}
+
+
 def compare_to_market(data, q=0.0, moneyness=(0.8, 1.2), min_price=0.05,
                       n_paths=50_000, seed=0):
     """Price each out-of-the-money option with the model and back out its implied vol.
