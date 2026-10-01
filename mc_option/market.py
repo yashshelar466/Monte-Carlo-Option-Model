@@ -18,6 +18,7 @@ import pandas as pd
 from scipy.optimize import brentq
 
 from .black_scholes import bs_price
+from .heston import calibrate_heston, heston_price
 from .monte_carlo import mc_european
 
 
@@ -134,3 +135,21 @@ def compare_to_market(data, q=0.0, moneyness=(0.8, 1.2), min_price=0.05,
             })
     columns = ["strike", "type", "market", "source", "model", "model_se", "implied_vol"]
     return pd.DataFrame(rows, columns=columns).sort_values("strike", ignore_index=True)
+
+
+def add_heston(df, data, q=0.0):
+    """Calibrate Heston to the market implied vols in `df` and add its prices and vols.
+
+    Returns (df with `heston` and `heston_iv` columns, HestonParams, IV rmse).
+    """
+    S0, T, r = data["spot"], data["T"], data["r"]
+    fit_rows = df.dropna(subset=["implied_vol"])
+    if len(fit_rows) < 5:
+        raise ValueError("Need at least 5 options with implied vols to calibrate Heston")
+    params, rmse = calibrate_heston(S0, fit_rows["strike"], T, r, fit_rows["market"],
+                                    fit_rows["implied_vol"], fit_rows["type"], q)
+    df = df.copy()
+    df["heston"] = [heston_price(S0, k, T, r, params, o, q) for k, o in zip(df["strike"], df["type"])]
+    df["heston_iv"] = [implied_vol(p, S0, k, T, r, o, q)
+                       for p, k, o in zip(df["heston"], df["strike"], df["type"])]
+    return df, params, rmse
