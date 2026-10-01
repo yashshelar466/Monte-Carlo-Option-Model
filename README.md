@@ -1,5 +1,7 @@
 # Monte-Carlo-Option-Model
 
+[![tests](https://github.com/yashshelar466/Monte-Carlo-Option-Model/actions/workflows/tests.yml/badge.svg)](https://github.com/yashshelar466/Monte-Carlo-Option-Model/actions/workflows/tests.yml)
+
 Price options by simulating many possible stock price paths and averaging the discounted payoff,
 then test the model against exact formulas and live market prices.
 
@@ -18,7 +20,7 @@ spot. The market pays heavily for crash protection that the lognormal model says
 - **Live market data** from Yahoo Finance: implied volatility, the volatility smile, model vs market
 - **Heston stochastic volatility**: Fourier pricing, Monte Carlo simulation, and calibration to the live smile
 - **Convergence study** showing the 1/√N error rate
-- 54 tests, all runnable offline
+- 54 tests, all runnable offline, run automatically on every push (Linux and Windows, Python 3.10–3.14)
 
 ## Quick start
 
