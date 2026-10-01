@@ -201,7 +201,13 @@ calibration work unchanged (`mc_option/bates.py`).
 python market_demo.py --heston --bates
 ```
 
-On the recorded SPY chain from 1 Oct 2026 (`tests/data/spy_2026-10-01.csv`):
+![Heston and Bates fitted to SPY](docs/spy_bates_2026-10-01.png)
+
+*Live SPY options, 1 Oct 2026, 29 days to expiry. Bates (violet) runs through the market's implied volatilities
+(orange) all the way out to the 35% puts, with a fit error of 0.04 vol points; Heston (green) misses the far puts
+by about 3 points (error 0.74). The live fit prices jumps of about −17.5%, 0.15 times a year.*
+
+On the recorded SPY chain from the same day (`tests/data/spy_2026-10-01.csv`):
 
 | | Heston | Bates |
 |---|---|---|
