@@ -169,10 +169,21 @@ implied-volatility errors. On a synthetic SPY-like chain it recovers the true pa
 python market_demo.py --heston
 ```
 
-fits Heston to today's live smile and draws its curve over the market's. Where Black-Scholes misses the skew,
-the fitted Heston curve runs through it, and the fitted `ρ` tells you how strongly the market expects volatility
-to rise in a sell-off. With a single expiry, `κ` and `θ` trade off against each other, so read them with care;
-the fitted smile itself is reliable.
+fits Heston to today's live smile and draws its curve over the market's:
+
+![Heston fitted to SPY](docs/spy_heston_2026-10-01.png)
+
+*Live SPY options, 1 Oct 2026, 29 days to expiry. Black-Scholes at the 13% historical volatility (blue) prices
+the 615 put at $0.00 against a market price of $0.34. Heston (green) tracks the market's skew from 35% down to
+11% with an implied-volatility error of 0.75 points, fitting ρ = −0.65: volatility is expected to rise sharply
+in a sell-off.*
+
+Where it still falls short is just as instructive. To bend a 29-day smile this steeply, Heston needs extreme
+parameters (κ at its upper bound of 10, vol of vol ξ = 2.2, today's volatility `√v0` only 4.8%), and it still
+sits about 3 points below the market for the furthest puts. Diffusion models struggle to produce steep skews
+at short maturities; adding price jumps (the Bates model) or fitting several expiries at once are the standard
+fixes. With a single expiry, `κ` and `θ` also trade off against each other, so read them with care; the fitted
+smile itself is reliable.
 
 ## Layout
 
