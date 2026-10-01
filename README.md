@@ -100,9 +100,3 @@ print(bs_price(100, 105, 1, 0.05, 0.2))
 - `convergence_chart.py`: draws `convergence.png`
 - `market_demo.py`: live model-vs-market comparison and volatility smile chart
 - `tests/`: checks against Black-Scholes
-
-## Ideas to extend
-
-- Barrier or lookback options (payoffs that depend on the path, like the Asian one)
-- Heston stochastic volatility or jump-diffusion dynamics
-- Quasi-random (Sobol) numbers for faster convergence
